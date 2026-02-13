@@ -286,6 +286,12 @@ func (m *model) enterViewDateMode() (tea.Model, tea.Cmd) {
 }
 
 func (m *model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if keyMsg, ok := msg.(tea.KeyMsg); ok && keyMsg.String() == "esc" {
+		m.mode = modeTable
+		m.status = ""
+		return m, nil
+	}
+
 	form, cmd := m.form.Update(msg)
 	if f, ok := form.(*huh.Form); ok {
 		m.form = f
@@ -293,11 +299,6 @@ func (m *model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	if m.form.State == huh.StateCompleted {
 		return m.handleFormComplete()
-	}
-	if m.form.State == huh.StateAborted {
-		m.mode = modeTable
-		m.status = ""
-		return m, nil
 	}
 
 	return m, cmd
