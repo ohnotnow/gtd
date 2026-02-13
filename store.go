@@ -164,12 +164,12 @@ func (s *Store) CarryOverTasks(tasks []Task, toDate string) error {
 	return tx.Commit()
 }
 
-// GetLatestDateWithTasks returns the most recent date before the given date that has tasks.
-// Returns "" if no previous days have tasks.
-func (s *Store) GetLatestDateWithTasks(beforeDate string) (string, error) {
+// GetLatestDateWithIncompleteTasks returns the most recent date before the given date
+// that has incomplete tasks. Returns "" if none found.
+func (s *Store) GetLatestDateWithIncompleteTasks(beforeDate string) (string, error) {
 	var date string
 	err := s.db.QueryRow(
-		`SELECT date FROM tasks WHERE date < ? GROUP BY date ORDER BY date DESC LIMIT 1`,
+		`SELECT date FROM tasks WHERE date < ? AND is_completed = 0 GROUP BY date ORDER BY date DESC LIMIT 1`,
 		beforeDate).Scan(&date)
 	if err == sql.ErrNoRows {
 		return "", nil
@@ -177,12 +177,12 @@ func (s *Store) GetLatestDateWithTasks(beforeDate string) (string, error) {
 	return date, err
 }
 
-// CopyTasksToDate copies all tasks from one date to another, resetting completion status.
-func (s *Store) CopyTasksToDate(fromDate, toDate string) error {
+// CopyIncompleteTasks copies incomplete tasks from one date to another.
+func (s *Store) CopyIncompleteTasks(fromDate, toDate string) error {
 	_, err := s.db.Exec(`
 		INSERT INTO tasks (date, description, priority, time_estimate, is_completed)
 		SELECT ?, description, priority, time_estimate, 0
-		FROM tasks WHERE date = ? ORDER BY priority, id`,
+		FROM tasks WHERE date = ? AND is_completed = 0 ORDER BY priority, id`,
 		toDate, fromDate)
 	return err
 }

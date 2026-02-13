@@ -378,7 +378,7 @@ func (m *model) importTasks() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if err := m.store.CopyTasksToDate(m.latestDateWithTasks, m.date); err != nil {
+	if err := m.store.CopyIncompleteTasks(m.latestDateWithTasks, m.date); err != nil {
 		m.status = "Error importing tasks."
 	} else {
 		lt, _ := time.Parse("2006-01-02", m.latestDateWithTasks)
@@ -399,7 +399,7 @@ func (m *model) refreshTasks() {
 
 	m.latestDateWithTasks = ""
 	if len(m.tasks) == 0 {
-		if date, err := m.store.GetLatestDateWithTasks(m.date); err == nil {
+		if date, err := m.store.GetLatestDateWithIncompleteTasks(m.date); err == nil {
 			m.latestDateWithTasks = date
 		}
 	}
