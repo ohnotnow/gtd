@@ -7,6 +7,8 @@ Single binary, zero dependencies, works anywhere.
 ![Go](https://img.shields.io/badge/Go-1.24+-00ADD8?logo=go&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-yellow.svg)
 
+![Screenshot](screenshot.png)
+
 ## Features
 
 - **Interactive table** — navigate tasks with arrow keys, act with single keypresses
