@@ -15,6 +15,7 @@ Single binary, zero dependencies, works anywhere.
 - **Import tasks** — viewing an empty day? Import incomplete tasks from your most recent day
 - **Portable** — single binary with embedded SQLite, no runtime dependencies
 - **Cross-platform** — builds for macOS, Linux and Windows (pure Go, no CGo)
+- **Print mode** — `--print` flag outputs tasks as plain text for scripting and automation
 
 ## Install
 
@@ -56,6 +57,10 @@ gtd
 
 # Specific date
 gtd 25/12/2025
+
+# Print tasks to stdout and exit (useful for scripting)
+gtd --print
+gtd 25/12/2025 --print
 ```
 
 ### Keyboard shortcuts
