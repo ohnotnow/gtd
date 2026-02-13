@@ -18,6 +18,12 @@ Single binary, zero dependencies, works anywhere.
 
 ## Install
 
+### Download a binary 
+
+Download the latest binary for your platform from the [releases page](https://github.com/ohnotnow/gtd/releases).
+
+Then just chmod it to be executable and run it.
+
 ### From source
 
 ```bash
