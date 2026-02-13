@@ -50,8 +50,9 @@ type model struct {
 	formConfirm  bool
 
 	// Context for current action
-	editTaskID      int64
-	carryCandidates []Task
+	editTaskID          int64
+	carryCandidates     []Task
+	latestDateWithTasks string
 }
 
 func newModel(store *Store, date string) *model {
@@ -101,6 +102,12 @@ func (m *model) View() string {
 		if len(m.tasks) == 0 {
 			s.WriteString(infoStyle.Render("  No tasks for this day."))
 			s.WriteString("\n")
+			if m.latestDateWithTasks != "" {
+				lt, _ := time.Parse("2006-01-02", m.latestDateWithTasks)
+				s.WriteString("\n")
+				s.WriteString(helpStyle.Render(fmt.Sprintf("  Press i to import tasks from %s", lt.Format("Monday 2 January 2006"))))
+				s.WriteString("\n")
+			}
 		} else {
 			s.WriteString(m.table.View())
 			s.WriteString("\n\n")
@@ -114,7 +121,15 @@ func (m *model) View() string {
 		}
 
 		s.WriteString("\n\n")
-		s.WriteString(helpStyle.Render("  a add · d done · e edit · x delete · c carry · v view day · q quit"))
+		if len(m.tasks) == 0 {
+			help := "  a add · v view day · q quit"
+			if m.latestDateWithTasks != "" {
+				help = "  a add · i import · v view day · q quit"
+			}
+			s.WriteString(helpStyle.Render(help))
+		} else {
+			s.WriteString(helpStyle.Render("  a add · d done · e/↵ edit · x delete · c carry · v view day · q quit"))
+		}
 		s.WriteString("\n")
 
 	case modeConfirmCarry:
@@ -145,8 +160,10 @@ func (m *model) updateTable(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.enterAddMode()
 		case "d":
 			return m.toggleDone()
-		case "e":
+		case "e", "enter":
 			return m.enterEditMode()
+		case "i":
+			return m.importTasks()
 		case "x":
 			return m.enterDeleteMode()
 		case "c":
@@ -356,6 +373,22 @@ func (m *model) handleFormComplete() (tea.Model, tea.Cmd) {
 
 // --- Helpers ---
 
+func (m *model) importTasks() (tea.Model, tea.Cmd) {
+	if m.latestDateWithTasks == "" {
+		return m, nil
+	}
+
+	if err := m.store.CopyTasksToDate(m.latestDateWithTasks, m.date); err != nil {
+		m.status = "Error importing tasks."
+	} else {
+		lt, _ := time.Parse("2006-01-02", m.latestDateWithTasks)
+		m.status = fmt.Sprintf("Tasks imported from %s.", lt.Format("02/01/2006"))
+	}
+
+	m.refreshTasks()
+	return m, nil
+}
+
 func (m *model) refreshTasks() {
 	tasks, err := m.store.GetTasksForDate(m.date)
 	if err != nil {
@@ -363,6 +396,14 @@ func (m *model) refreshTasks() {
 	} else {
 		m.tasks = tasks
 	}
+
+	m.latestDateWithTasks = ""
+	if len(m.tasks) == 0 {
+		if date, err := m.store.GetLatestDateWithTasks(m.date); err == nil {
+			m.latestDateWithTasks = date
+		}
+	}
+
 	m.rebuildTable()
 }
 

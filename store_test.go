@@ -184,6 +184,86 @@ func TestCarryOverExcludesAlreadyCarried(t *testing.T) {
 	}
 }
 
+func TestGetLatestDateWithTasks(t *testing.T) {
+	s := newTestStore(t)
+
+	// No tasks at all — should return empty string
+	date, err := s.GetLatestDateWithTasks("2025-01-20")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if date != "" {
+		t.Errorf("expected empty string, got %q", date)
+	}
+
+	// Add tasks on two different days
+	s.AddTask("2025-01-10", "Old task", PriorityA, "1h")
+	s.AddTask("2025-01-15", "Recent task", PriorityB, "2h")
+
+	// Looking before the 20th — should find the 15th
+	date, err = s.GetLatestDateWithTasks("2025-01-20")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if date != "2025-01-15" {
+		t.Errorf("expected 2025-01-15, got %q", date)
+	}
+
+	// Looking before the 12th — should find the 10th
+	date, err = s.GetLatestDateWithTasks("2025-01-12")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if date != "2025-01-10" {
+		t.Errorf("expected 2025-01-10, got %q", date)
+	}
+
+	// Looking before the 10th — no earlier tasks
+	date, err = s.GetLatestDateWithTasks("2025-01-10")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if date != "" {
+		t.Errorf("expected empty string, got %q", date)
+	}
+}
+
+func TestCopyTasksToDate(t *testing.T) {
+	s := newTestStore(t)
+
+	s.AddTask("2025-01-15", "Task A", PriorityA, "1h")
+	s.AddTask("2025-01-15", "Task B", PriorityB, "2h")
+	s.AddTask("2025-01-15", "Task C", PriorityC, "30m")
+
+	// Mark one as complete
+	tasks, _ := s.GetTasksForDate("2025-01-15")
+	for _, task := range tasks {
+		if task.Description == "Task B" {
+			s.MarkComplete(task.ID)
+		}
+	}
+
+	// Copy to a new date
+	if err := s.CopyTasksToDate("2025-01-15", "2025-01-20"); err != nil {
+		t.Fatal(err)
+	}
+
+	copied, _ := s.GetTasksForDate("2025-01-20")
+	if len(copied) != 3 {
+		t.Fatalf("expected 3 copied tasks, got %d", len(copied))
+	}
+
+	// All copied tasks should be incomplete (reset) and not carried over
+	for _, c := range copied {
+		if c.IsCompleted {
+			t.Errorf("copied task %q should not be completed", c.Description)
+		}
+		if c.WasCarriedOver() {
+			t.Errorf("copied task %q should not have CarriedFromID", c.Description)
+		}
+	}
+}
+
 func TestGetTasksForEmptyDate(t *testing.T) {
 	s := newTestStore(t)
 
