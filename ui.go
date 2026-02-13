@@ -384,11 +384,11 @@ func (m *model) rebuildTable() {
 		}
 	}
 
-	height := len(m.tasks)
-	if height == 0 {
-		height = 1
+	height := len(m.tasks) + 2 // +2 for header row + border
+	if height < 3 {
+		height = 3
 	}
-	if maxH := m.height - 12; maxH > 0 && height > maxH {
+	if maxH := m.height - 10; maxH > 3 && height > maxH {
 		height = maxH
 	}
 
