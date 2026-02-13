@@ -32,15 +32,16 @@ const (
 )
 
 type model struct {
-	store  *Store
-	date   string
-	tasks  []Task
-	table  table.Model
-	mode   mode
-	form   *huh.Form
-	status string
-	width  int
-	height int
+	store   *Store
+	date    string
+	context string
+	tasks   []Task
+	table   table.Model
+	mode    mode
+	form    *huh.Form
+	status  string
+	width   int
+	height  int
 
 	// Form field bindings (pointer receiver keeps addresses stable)
 	formDesc     string
@@ -55,11 +56,12 @@ type model struct {
 	latestDateWithTasks string
 }
 
-func newModel(store *Store, date string) *model {
+func newModel(store *Store, date, context string) *model {
 	m := &model{
-		store: store,
-		date:  date,
-		width: 80,
+		store:   store,
+		date:    date,
+		context: context,
+		width:   80,
 	}
 	m.refreshTasks()
 	return m
@@ -94,7 +96,11 @@ func (m *model) View() string {
 	var s strings.Builder
 
 	s.WriteString("\n")
-	s.WriteString(titleStyle.Render(formatHeading(m.date)))
+	heading := formatHeading(m.date)
+	if m.context != "default" {
+		heading += " · " + m.context
+	}
+	s.WriteString(titleStyle.Render(heading))
 	s.WriteString("\n\n")
 
 	switch m.mode {
@@ -260,7 +266,7 @@ func (m *model) enterDeleteMode() (tea.Model, tea.Cmd) {
 
 func (m *model) enterCarryMode() (tea.Model, tea.Cmd) {
 	toDate := tomorrow(m.date)
-	candidates, err := m.store.GetCarryOverCandidates(m.date, toDate)
+	candidates, err := m.store.GetCarryOverCandidates(m.date, toDate, m.context)
 	if err != nil {
 		m.status = "Error loading tasks."
 		return m, nil
@@ -324,7 +330,7 @@ func (m *model) updateForm(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *model) handleFormComplete() (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeAdd:
-		if err := m.store.AddTask(m.date, m.formDesc, m.formPriority, m.formEstimate); err != nil {
+		if err := m.store.AddTask(m.date, m.formDesc, m.formPriority, m.formEstimate, m.context); err != nil {
 			m.status = "Error adding task."
 		} else {
 			m.status = "Task added."
@@ -349,7 +355,7 @@ func (m *model) handleFormComplete() (tea.Model, tea.Cmd) {
 	case modeConfirmCarry:
 		if m.formConfirm {
 			toDate := tomorrow(m.date)
-			if err := m.store.CarryOverTasks(m.carryCandidates, toDate); err != nil {
+			if err := m.store.CarryOverTasks(m.carryCandidates, toDate, m.context); err != nil {
 				m.status = "Error carrying over tasks."
 			} else {
 				m.status = "Tasks carried over."
@@ -378,7 +384,7 @@ func (m *model) importTasks() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	if err := m.store.CopyIncompleteTasks(m.latestDateWithTasks, m.date); err != nil {
+	if err := m.store.CopyIncompleteTasks(m.latestDateWithTasks, m.date, m.context); err != nil {
 		m.status = "Error importing tasks."
 	} else {
 		lt, _ := time.Parse("2006-01-02", m.latestDateWithTasks)
@@ -390,7 +396,7 @@ func (m *model) importTasks() (tea.Model, tea.Cmd) {
 }
 
 func (m *model) refreshTasks() {
-	tasks, err := m.store.GetTasksForDate(m.date)
+	tasks, err := m.store.GetTasksForDate(m.date, m.context)
 	if err != nil {
 		m.tasks = nil
 	} else {
@@ -399,7 +405,7 @@ func (m *model) refreshTasks() {
 
 	m.latestDateWithTasks = ""
 	if len(m.tasks) == 0 {
-		if date, err := m.store.GetLatestDateWithIncompleteTasks(m.date); err == nil {
+		if date, err := m.store.GetLatestDateWithIncompleteTasks(m.date, m.context); err == nil {
 			m.latestDateWithTasks = date
 		}
 	}

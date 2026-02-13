@@ -59,13 +59,20 @@ func (s *Store) migrate() error {
 			carried_from_id INTEGER REFERENCES tasks(id)
 		)
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Add context column for existing databases (ignored if already present).
+	s.db.Exec(`ALTER TABLE tasks ADD COLUMN context TEXT NOT NULL DEFAULT 'default'`)
+
+	return nil
 }
 
-func (s *Store) GetTasksForDate(date string) ([]Task, error) {
+func (s *Store) GetTasksForDate(date, context string) ([]Task, error) {
 	rows, err := s.db.Query(
 		`SELECT id, date, description, priority, time_estimate, is_completed, carried_from_id
-		 FROM tasks WHERE date = ? ORDER BY priority, id`, date)
+		 FROM tasks WHERE date = ? AND context = ? ORDER BY priority, id`, date, context)
 	if err != nil {
 		return nil, err
 	}
@@ -74,10 +81,10 @@ func (s *Store) GetTasksForDate(date string) ([]Task, error) {
 	return scanTasks(rows)
 }
 
-func (s *Store) AddTask(date, description string, priority Priority, timeEstimate string) error {
+func (s *Store) AddTask(date, description string, priority Priority, timeEstimate, context string) error {
 	_, err := s.db.Exec(
-		`INSERT INTO tasks (date, description, priority, time_estimate) VALUES (?, ?, ?, ?)`,
-		date, description, string(priority), timeEstimate)
+		`INSERT INTO tasks (date, description, priority, time_estimate, context) VALUES (?, ?, ?, ?, ?)`,
+		date, description, string(priority), timeEstimate, context)
 	return err
 }
 
@@ -122,16 +129,17 @@ func (s *Store) GetTask(id int64) (Task, error) {
 
 // GetCarryOverCandidates returns incomplete tasks for fromDate that haven't already
 // been carried over to the next day.
-func (s *Store) GetCarryOverCandidates(fromDate, toDate string) ([]Task, error) {
+func (s *Store) GetCarryOverCandidates(fromDate, toDate, context string) ([]Task, error) {
 	rows, err := s.db.Query(`
 		SELECT t.id, t.date, t.description, t.priority, t.time_estimate, t.is_completed, t.carried_from_id
 		FROM tasks t
 		WHERE t.date = ?
+		  AND t.context = ?
 		  AND t.is_completed = 0
 		  AND t.id NOT IN (
-			SELECT carried_from_id FROM tasks WHERE date = ? AND carried_from_id IS NOT NULL
+			SELECT carried_from_id FROM tasks WHERE date = ? AND context = ? AND carried_from_id IS NOT NULL
 		  )
-		ORDER BY t.priority, t.id`, fromDate, toDate)
+		ORDER BY t.priority, t.id`, fromDate, context, toDate, context)
 	if err != nil {
 		return nil, err
 	}
@@ -141,7 +149,7 @@ func (s *Store) GetCarryOverCandidates(fromDate, toDate string) ([]Task, error) 
 }
 
 // CarryOverTasks creates copies of the given tasks for toDate, setting carried_from_id.
-func (s *Store) CarryOverTasks(tasks []Task, toDate string) error {
+func (s *Store) CarryOverTasks(tasks []Task, toDate, context string) error {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return err
@@ -149,14 +157,14 @@ func (s *Store) CarryOverTasks(tasks []Task, toDate string) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(
-		`INSERT INTO tasks (date, description, priority, time_estimate, carried_from_id) VALUES (?, ?, ?, ?, ?)`)
+		`INSERT INTO tasks (date, description, priority, time_estimate, carried_from_id, context) VALUES (?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, t := range tasks {
-		if _, err := stmt.Exec(toDate, t.Description, string(t.Priority), t.TimeEstimate, t.ID); err != nil {
+		if _, err := stmt.Exec(toDate, t.Description, string(t.Priority), t.TimeEstimate, t.ID, context); err != nil {
 			return err
 		}
 	}
@@ -166,11 +174,11 @@ func (s *Store) CarryOverTasks(tasks []Task, toDate string) error {
 
 // GetLatestDateWithIncompleteTasks returns the most recent date before the given date
 // that has incomplete tasks. Returns "" if none found.
-func (s *Store) GetLatestDateWithIncompleteTasks(beforeDate string) (string, error) {
+func (s *Store) GetLatestDateWithIncompleteTasks(beforeDate, context string) (string, error) {
 	var date string
 	err := s.db.QueryRow(
-		`SELECT date FROM tasks WHERE date < ? AND is_completed = 0 GROUP BY date ORDER BY date DESC LIMIT 1`,
-		beforeDate).Scan(&date)
+		`SELECT date FROM tasks WHERE date < ? AND context = ? AND is_completed = 0 GROUP BY date ORDER BY date DESC LIMIT 1`,
+		beforeDate, context).Scan(&date)
 	if err == sql.ErrNoRows {
 		return "", nil
 	}
@@ -178,12 +186,12 @@ func (s *Store) GetLatestDateWithIncompleteTasks(beforeDate string) (string, err
 }
 
 // CopyIncompleteTasks copies incomplete tasks from one date to another.
-func (s *Store) CopyIncompleteTasks(fromDate, toDate string) error {
+func (s *Store) CopyIncompleteTasks(fromDate, toDate, context string) error {
 	_, err := s.db.Exec(`
-		INSERT INTO tasks (date, description, priority, time_estimate, is_completed)
-		SELECT ?, description, priority, time_estimate, 0
-		FROM tasks WHERE date = ? AND is_completed = 0 ORDER BY priority, id`,
-		toDate, fromDate)
+		INSERT INTO tasks (date, description, priority, time_estimate, is_completed, context)
+		SELECT ?, description, priority, time_estimate, 0, context
+		FROM tasks WHERE date = ? AND context = ? AND is_completed = 0 ORDER BY priority, id`,
+		toDate, fromDate, context)
 	return err
 }
 

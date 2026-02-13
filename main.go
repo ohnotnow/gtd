@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"text/tabwriter"
 	"time"
 
@@ -10,9 +11,9 @@ import (
 )
 
 func main() {
-	date, printMode, err := parseArgs(os.Args[1:])
+	date, printMode, context, err := parseArgs(os.Args[1:])
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Invalid date: %v\nUsage: gtd [dd/mm/yyyy] [--print]\n", err)
+		fmt.Fprintf(os.Stderr, "%v\nUsage: gtd [dd/mm/yyyy] [--print] [--context <name>]\n", err)
 		os.Exit(1)
 	}
 
@@ -24,14 +25,14 @@ func main() {
 	defer store.Close()
 
 	if printMode {
-		if err := printTasks(store, date); err != nil {
+		if err := printTasks(store, date, context); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 		return
 	}
 
-	p := tea.NewProgram(newModel(store, date), tea.WithAltScreen())
+	p := tea.NewProgram(newModel(store, date, context), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
@@ -40,28 +41,45 @@ func main() {
 	fmt.Println("See you later!")
 }
 
-// parseArgs extracts the date and --print flag from command-line arguments.
-// The date and --print flag can appear in any order.
-func parseArgs(args []string) (date string, printMode bool, err error) {
+// parseArgs extracts the date, --print flag, and --context from command-line arguments.
+// Flags and date can appear in any order.
+func parseArgs(args []string) (date string, printMode bool, context string, err error) {
 	date = time.Now().Format("2006-01-02")
+	context = "default"
 
-	for _, arg := range args {
+	for i := 0; i < len(args); i++ {
+		arg := args[i]
 		if arg == "--print" {
 			printMode = true
 			continue
 		}
+		if arg == "--context" {
+			if i+1 >= len(args) {
+				return "", false, "", fmt.Errorf("--context requires a value")
+			}
+			i++
+			context = args[i]
+			continue
+		}
+		if strings.HasPrefix(arg, "--context=") {
+			context = strings.TrimPrefix(arg, "--context=")
+			if context == "" {
+				return "", false, "", fmt.Errorf("--context requires a value")
+			}
+			continue
+		}
 		t, parseErr := time.Parse("02/01/2006", arg)
 		if parseErr != nil {
-			return "", false, fmt.Errorf("expected dd/mm/yyyy, got %q", arg)
+			return "", false, "", fmt.Errorf("expected dd/mm/yyyy, got %q", arg)
 		}
 		date = t.Format("2006-01-02")
 	}
 
-	return date, printMode, nil
+	return date, printMode, context, nil
 }
 
-func printTasks(store *Store, date string) error {
-	tasks, err := store.GetTasksForDate(date)
+func printTasks(store *Store, date, context string) error {
+	tasks, err := store.GetTasksForDate(date, context)
 	if err != nil {
 		return err
 	}

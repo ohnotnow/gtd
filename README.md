@@ -15,6 +15,7 @@ Single binary, zero dependencies, works anywhere.
 - **Import tasks** — viewing an empty day? Import incomplete tasks from your most recent day
 - **Portable** — single binary with embedded SQLite, no runtime dependencies
 - **Cross-platform** — builds for macOS, Linux and Windows (pure Go, no CGo)
+- **Contexts** — keep separate task lists with `--context` (e.g. work, personal, side-project)
 - **Print mode** — `--print` flag outputs tasks as plain text for scripting and automation
 
 ## Install
@@ -58,10 +59,19 @@ gtd
 # Specific date
 gtd 25/12/2025
 
+# Use a named context to keep separate task lists
+gtd --context work
+gtd --context personal
+
+# Combine flags freely
+gtd 25/12/2025 --context work --print
+
 # Print tasks to stdout and exit (useful for scripting)
 gtd --print
 gtd 25/12/2025 --print
 ```
+
+When no `--context` is given, tasks go into a default list. Each context has its own tasks, carry-over, and import, all stored in the same database.
 
 ### Keyboard shortcuts
 
