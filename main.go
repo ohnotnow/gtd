@@ -37,8 +37,6 @@ func main() {
 		fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 		os.Exit(1)
 	}
-
-	fmt.Println("See you later!")
 }
 
 // parseArgs extracts the date, --print flag, and --context from command-line arguments.
