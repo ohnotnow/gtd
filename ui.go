@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/table"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/huh"
@@ -117,8 +118,13 @@ func (m *model) View() string {
 		} else {
 			s.WriteString(m.table.View())
 			s.WriteString("\n\n")
-			completed := len(filterTasks(m.tasks, func(t Task) bool { return t.IsCompleted }))
-			s.WriteString(infoStyle.Render(fmt.Sprintf("  %d/%d tasks completed", completed, len(m.tasks))))
+			completed := len(filterTasks(m.tasks, func(t Task) bool { return t.Status == StatusDone }))
+			inProgress := len(filterTasks(m.tasks, func(t Task) bool { return t.Status == StatusInProgress }))
+			summary := fmt.Sprintf("  %d/%d tasks completed", completed, len(m.tasks))
+			if inProgress > 0 {
+				summary += fmt.Sprintf(", %d in progress", inProgress)
+			}
+			s.WriteString(infoStyle.Render(summary))
 		}
 
 		if m.status != "" {
@@ -134,7 +140,7 @@ func (m *model) View() string {
 			}
 			s.WriteString(helpStyle.Render(help))
 		} else {
-			s.WriteString(helpStyle.Render("  a add · d done · e/↵ edit · x delete · c carry · v view day · q quit"))
+			s.WriteString(helpStyle.Render("  a add · s start · d done · e/↵ edit · x delete · c carry · v view day · q quit"))
 		}
 		s.WriteString("\n")
 
@@ -164,6 +170,8 @@ func (m *model) updateTable(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case "a":
 			return m.enterAddMode()
+		case "s":
+			return m.toggleInProgress()
 		case "d":
 			return m.toggleDone()
 		case "e", "enter":
@@ -191,12 +199,31 @@ func (m *model) toggleDone() (tea.Model, tea.Cmd) {
 	}
 
 	task := m.tasks[m.table.Cursor()]
-	if task.IsCompleted {
+	if task.Status == StatusDone {
 		m.store.MarkIncomplete(task.ID)
 		m.status = "Task marked as not done."
 	} else {
 		m.store.MarkComplete(task.ID)
 		m.status = "Task marked as done."
+	}
+
+	m.refreshTasks()
+	return m, nil
+}
+
+func (m *model) toggleInProgress() (tea.Model, tea.Cmd) {
+	if len(m.tasks) == 0 {
+		m.status = "No tasks."
+		return m, nil
+	}
+
+	task := m.tasks[m.table.Cursor()]
+	if task.Status == StatusInProgress {
+		m.store.MarkIncomplete(task.ID)
+		m.status = "Task no longer in progress."
+	} else {
+		m.store.MarkInProgress(task.ID)
+		m.status = "Task marked as in progress."
 	}
 
 	m.refreshTasks()
@@ -250,16 +277,8 @@ func (m *model) enterDeleteMode() (tea.Model, tea.Cmd) {
 
 	task := m.tasks[m.table.Cursor()]
 	m.editTaskID = task.ID
-	m.formConfirm = false
-	m.form = huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title(fmt.Sprintf("Delete '%s'?", task.Description)).
-				Affirmative("Yes").
-				Negative("No").
-				Value(&m.formConfirm),
-		),
-	)
+	m.formConfirm = true
+	m.form = confirmForm(fmt.Sprintf("Delete '%s'?", task.Description), &m.formConfirm)
 	m.mode = modeConfirmDelete
 	return m, m.form.Init()
 }
@@ -273,7 +292,7 @@ func (m *model) enterCarryMode() (tea.Model, tea.Cmd) {
 	}
 
 	if len(candidates) == 0 {
-		incomplete := filterTasks(m.tasks, func(t Task) bool { return !t.IsCompleted })
+		incomplete := filterTasks(m.tasks, func(t Task) bool { return t.Status != StatusDone })
 		if len(incomplete) == 0 {
 			m.status = "No incomplete tasks to carry over."
 		} else {
@@ -283,16 +302,8 @@ func (m *model) enterCarryMode() (tea.Model, tea.Cmd) {
 	}
 
 	m.carryCandidates = candidates
-	m.formConfirm = false
-	m.form = huh.NewForm(
-		huh.NewGroup(
-			huh.NewConfirm().
-				Title("Carry these over?").
-				Affirmative("Yes").
-				Negative("No").
-				Value(&m.formConfirm),
-		),
-	)
+	m.formConfirm = true
+	m.form = confirmForm("Carry these over?", &m.formConfirm)
 	m.mode = modeConfirmCarry
 	return m, m.form.Init()
 }
@@ -419,16 +430,12 @@ func (m *model) rebuildTable() {
 	cols := tableColumns(m.width)
 	rows := make([]table.Row, len(m.tasks))
 	for i, t := range m.tasks {
-		done := ""
-		if t.IsCompleted {
-			done = "✓"
-		}
 		rows[i] = table.Row{
 			fmt.Sprintf("%d", i+1),
 			t.DisplayDescription(),
 			string(t.Priority),
 			t.TimeEstimate,
-			done,
+			t.Status.Symbol(),
 		}
 	}
 
@@ -472,7 +479,7 @@ func (m *model) rebuildTable() {
 }
 
 func tableColumns(width int) []table.Column {
-	fixed := 4 + 10 + 8 + 6 + 8 // #, Priority, Time, Done + padding/borders
+	fixed := 4 + 10 + 8 + 6 + 8 // #, Priority, Time, Status + padding/borders
 	taskWidth := width - fixed
 	if taskWidth < 20 {
 		taskWidth = 20
@@ -485,7 +492,7 @@ func tableColumns(width int) []table.Column {
 		{Title: "Task", Width: taskWidth},
 		{Title: "Priority", Width: 10},
 		{Title: "Time", Width: 8},
-		{Title: "Done", Width: 6},
+		{Title: "Status", Width: 6},
 	}
 }
 
@@ -497,6 +504,20 @@ func formatHeading(date string) string {
 func tomorrow(date string) string {
 	t, _ := time.Parse("2006-01-02", date)
 	return t.AddDate(0, 0, 1).Format("2006-01-02")
+}
+
+func confirmForm(title string, value *bool) *huh.Form {
+	km := huh.NewDefaultKeyMap()
+	km.Confirm.Toggle = key.NewBinding(key.WithKeys("h", "l", "right", "left", "tab"))
+	return huh.NewForm(
+		huh.NewGroup(
+			huh.NewConfirm().
+				Title(title).
+				Affirmative("Yes").
+				Negative("No").
+				Value(value),
+		),
+	).WithKeyMap(km)
 }
 
 func notEmpty(field string) func(string) error {

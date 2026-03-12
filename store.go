@@ -110,6 +110,11 @@ func (s *Store) MarkIncomplete(id int64) error {
 	return err
 }
 
+func (s *Store) MarkInProgress(id int64) error {
+	_, err := s.db.Exec(`UPDATE tasks SET is_completed = 2 WHERE id = ?`, id)
+	return err
+}
+
 func (s *Store) GetTask(id int64) (Task, error) {
 	row := s.db.QueryRow(
 		`SELECT id, date, description, priority, time_estimate, is_completed, carried_from_id
@@ -117,10 +122,12 @@ func (s *Store) GetTask(id int64) (Task, error) {
 
 	var t Task
 	var carriedFromID sql.NullInt64
-	err := row.Scan(&t.ID, &t.Date, &t.Description, &t.Priority, &t.TimeEstimate, &t.IsCompleted, &carriedFromID)
+	var status int
+	err := row.Scan(&t.ID, &t.Date, &t.Description, &t.Priority, &t.TimeEstimate, &status, &carriedFromID)
 	if err != nil {
 		return Task{}, err
 	}
+	t.Status = Status(status)
 	if carriedFromID.Valid {
 		t.CarriedFromID = &carriedFromID.Int64
 	}
@@ -135,7 +142,7 @@ func (s *Store) GetCarryOverCandidates(fromDate, toDate, context string) ([]Task
 		FROM tasks t
 		WHERE t.date = ?
 		  AND t.context = ?
-		  AND t.is_completed = 0
+		  AND t.is_completed != 1
 		  AND t.id NOT IN (
 			SELECT carried_from_id FROM tasks WHERE date = ? AND context = ? AND carried_from_id IS NOT NULL
 		  )
@@ -157,14 +164,14 @@ func (s *Store) CarryOverTasks(tasks []Task, toDate, context string) error {
 	defer tx.Rollback()
 
 	stmt, err := tx.Prepare(
-		`INSERT INTO tasks (date, description, priority, time_estimate, carried_from_id, context) VALUES (?, ?, ?, ?, ?, ?)`)
+		`INSERT INTO tasks (date, description, priority, time_estimate, is_completed, carried_from_id, context) VALUES (?, ?, ?, ?, ?, ?, ?)`)
 	if err != nil {
 		return err
 	}
 	defer stmt.Close()
 
 	for _, t := range tasks {
-		if _, err := stmt.Exec(toDate, t.Description, string(t.Priority), t.TimeEstimate, t.ID, context); err != nil {
+		if _, err := stmt.Exec(toDate, t.Description, string(t.Priority), t.TimeEstimate, int(t.Status), t.ID, context); err != nil {
 			return err
 		}
 	}
@@ -177,7 +184,7 @@ func (s *Store) CarryOverTasks(tasks []Task, toDate, context string) error {
 func (s *Store) GetLatestDateWithIncompleteTasks(beforeDate, context string) (string, error) {
 	var date string
 	err := s.db.QueryRow(
-		`SELECT date FROM tasks WHERE date < ? AND context = ? AND is_completed = 0 GROUP BY date ORDER BY date DESC LIMIT 1`,
+		`SELECT date FROM tasks WHERE date < ? AND context = ? AND is_completed != 1 GROUP BY date ORDER BY date DESC LIMIT 1`,
 		beforeDate, context).Scan(&date)
 	if err == sql.ErrNoRows {
 		return "", nil
@@ -189,8 +196,8 @@ func (s *Store) GetLatestDateWithIncompleteTasks(beforeDate, context string) (st
 func (s *Store) CopyIncompleteTasks(fromDate, toDate, context string) error {
 	_, err := s.db.Exec(`
 		INSERT INTO tasks (date, description, priority, time_estimate, is_completed, context)
-		SELECT ?, description, priority, time_estimate, 0, context
-		FROM tasks WHERE date = ? AND context = ? AND is_completed = 0 ORDER BY priority, id`,
+		SELECT ?, description, priority, time_estimate, is_completed, context
+		FROM tasks WHERE date = ? AND context = ? AND is_completed != 1 ORDER BY priority, id`,
 		toDate, fromDate, context)
 	return err
 }
@@ -200,9 +207,11 @@ func scanTasks(rows *sql.Rows) ([]Task, error) {
 	for rows.Next() {
 		var t Task
 		var carriedFromID sql.NullInt64
-		if err := rows.Scan(&t.ID, &t.Date, &t.Description, &t.Priority, &t.TimeEstimate, &t.IsCompleted, &carriedFromID); err != nil {
+		var status int
+		if err := rows.Scan(&t.ID, &t.Date, &t.Description, &t.Priority, &t.TimeEstimate, &status, &carriedFromID); err != nil {
 			return nil, err
 		}
+		t.Status = Status(status)
 		if carriedFromID.Valid {
 			t.CarriedFromID = &carriedFromID.Int64
 		}

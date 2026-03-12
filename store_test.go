@@ -94,20 +94,26 @@ func TestMarkCompleteAndIncomplete(t *testing.T) {
 	tasks, _ := s.GetTasksForDate("2025-01-15", "default")
 	id := tasks[0].ID
 
-	if tasks[0].IsCompleted {
-		t.Error("new task should not be completed")
+	if tasks[0].Status != StatusTodo {
+		t.Error("new task should be todo")
 	}
 
 	s.MarkComplete(id)
 	task, _ := s.GetTask(id)
-	if !task.IsCompleted {
+	if task.Status != StatusDone {
 		t.Error("task should be completed after MarkComplete")
 	}
 
 	s.MarkIncomplete(id)
 	task, _ = s.GetTask(id)
-	if task.IsCompleted {
-		t.Error("task should not be completed after MarkIncomplete")
+	if task.Status != StatusTodo {
+		t.Error("task should be todo after MarkIncomplete")
+	}
+
+	s.MarkInProgress(id)
+	task, _ = s.GetTask(id)
+	if task.Status != StatusInProgress {
+		t.Error("task should be in-progress after MarkInProgress")
 	}
 }
 
@@ -157,7 +163,7 @@ func TestCarryOverTasks(t *testing.T) {
 		if !c.WasCarriedOver() {
 			t.Errorf("carried task %q should have CarriedFromID set", c.Description)
 		}
-		if c.IsCompleted {
+		if c.Status == StatusDone {
 			t.Errorf("carried task %q should not be completed", c.Description)
 		}
 	}
@@ -260,7 +266,7 @@ func TestCopyIncompleteTasks(t *testing.T) {
 		if c.Description == "Task B" {
 			t.Error("completed task 'Task B' should not have been copied")
 		}
-		if c.IsCompleted {
+		if c.Status == StatusDone {
 			t.Errorf("copied task %q should not be completed", c.Description)
 		}
 	}
@@ -331,5 +337,63 @@ func TestCarryOverRespectsContext(t *testing.T) {
 	personalCarried, _ := s.GetTasksForDate("2025-01-16", "personal")
 	if len(personalCarried) != 0 {
 		t.Errorf("expected 0 carried personal tasks, got %d", len(personalCarried))
+	}
+}
+
+func TestCarryOverPreservesInProgressStatus(t *testing.T) {
+	s := newTestStore(t)
+
+	s.AddTask("2025-01-15", "In progress task", PriorityA, "1h", "default")
+	s.AddTask("2025-01-15", "Todo task", PriorityB, "2h", "default")
+
+	tasks, _ := s.GetTasksForDate("2025-01-15", "default")
+	for _, task := range tasks {
+		if task.Description == "In progress task" {
+			s.MarkInProgress(task.ID)
+		}
+	}
+
+	candidates, _ := s.GetCarryOverCandidates("2025-01-15", "2025-01-16", "default")
+	if len(candidates) != 2 {
+		t.Fatalf("expected 2 candidates (todo + in-progress), got %d", len(candidates))
+	}
+
+	s.CarryOverTasks(candidates, "2025-01-16", "default")
+
+	carried, _ := s.GetTasksForDate("2025-01-16", "default")
+	for _, c := range carried {
+		if c.Description == "In progress task" && c.Status != StatusInProgress {
+			t.Errorf("in-progress status should be preserved after carry-over, got %d", c.Status)
+		}
+		if c.Description == "Todo task" && c.Status != StatusTodo {
+			t.Errorf("todo status should be preserved after carry-over, got %d", c.Status)
+		}
+	}
+}
+
+func TestCopyIncompleteTasksPreservesInProgress(t *testing.T) {
+	s := newTestStore(t)
+
+	s.AddTask("2025-01-15", "WIP task", PriorityA, "1h", "default")
+	s.AddTask("2025-01-15", "Done task", PriorityB, "2h", "default")
+
+	tasks, _ := s.GetTasksForDate("2025-01-15", "default")
+	for _, task := range tasks {
+		if task.Description == "WIP task" {
+			s.MarkInProgress(task.ID)
+		}
+		if task.Description == "Done task" {
+			s.MarkComplete(task.ID)
+		}
+	}
+
+	s.CopyIncompleteTasks("2025-01-15", "2025-01-20", "default")
+
+	copied, _ := s.GetTasksForDate("2025-01-20", "default")
+	if len(copied) != 1 {
+		t.Fatalf("expected 1 copied task (WIP only), got %d", len(copied))
+	}
+	if copied[0].Status != StatusInProgress {
+		t.Errorf("expected in-progress status to be preserved, got %d", copied[0].Status)
 	}
 }

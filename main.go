@@ -92,18 +92,19 @@ func printTasks(store *Store, date, context string) error {
 	}
 
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "#\tTask\tPriority\tTime\tDone")
+	fmt.Fprintln(w, "#\tTask\tPriority\tTime\tStatus")
 	for i, t := range tasks {
-		done := ""
-		if t.IsCompleted {
-			done = "Yes"
-		}
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", i+1, t.DisplayDescription(), t.Priority, t.TimeEstimate, done)
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\n", i+1, t.DisplayDescription(), t.Priority, t.TimeEstimate, t.Status.PrintLabel())
 	}
 	w.Flush()
 
-	completed := len(filterTasks(tasks, func(t Task) bool { return t.IsCompleted }))
-	fmt.Printf("\n%d/%d tasks completed\n", completed, len(tasks))
+	completed := len(filterTasks(tasks, func(t Task) bool { return t.Status == StatusDone }))
+	inProgress := len(filterTasks(tasks, func(t Task) bool { return t.Status == StatusInProgress }))
+	summary := fmt.Sprintf("\n%d/%d tasks completed", completed, len(tasks))
+	if inProgress > 0 {
+		summary += fmt.Sprintf(", %d in progress", inProgress)
+	}
+	fmt.Println(summary)
 
 	return nil
 }

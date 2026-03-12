@@ -171,8 +171,30 @@ func TestPrintTasksWithTasks(t *testing.T) {
 	if !strings.Contains(output, "Buy milk") {
 		t.Errorf("expected 'Buy milk' in output, got:\n%s", output)
 	}
+	if !strings.Contains(output, "Status") {
+		t.Errorf("expected 'Status' column header in output, got:\n%s", output)
+	}
 	if !strings.Contains(output, "1/2 tasks completed") {
 		t.Errorf("expected '1/2 tasks completed' in output, got:\n%s", output)
+	}
+}
+
+func TestPrintTasksWithInProgress(t *testing.T) {
+	s := newTestStore(t)
+	s.AddTask("2025-06-01", "Active task", PriorityA, "2h", "default")
+	s.AddTask("2025-06-01", "Done task", PriorityB, "30m", "default")
+
+	tasks, _ := s.GetTasksForDate("2025-06-01", "default")
+	s.MarkInProgress(tasks[0].ID)
+	s.MarkComplete(tasks[1].ID)
+
+	output := capturePrintTasks(t, s, "2025-06-01", "default")
+
+	if !strings.Contains(output, "WIP") {
+		t.Errorf("expected 'WIP' in output, got:\n%s", output)
+	}
+	if !strings.Contains(output, "1 in progress") {
+		t.Errorf("expected '1 in progress' in output, got:\n%s", output)
 	}
 }
 

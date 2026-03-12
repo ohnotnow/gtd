@@ -54,6 +54,37 @@ func PriorityOptions() []huh.Option[Priority] {
 	}
 }
 
+// Status represents task completion state.
+type Status int
+
+const (
+	StatusTodo       Status = 0
+	StatusDone       Status = 1
+	StatusInProgress Status = 2
+)
+
+func (s Status) Symbol() string {
+	switch s {
+	case StatusInProgress:
+		return "▶"
+	case StatusDone:
+		return "✓"
+	default:
+		return ""
+	}
+}
+
+func (s Status) PrintLabel() string {
+	switch s {
+	case StatusInProgress:
+		return "WIP"
+	case StatusDone:
+		return "Yes"
+	default:
+		return ""
+	}
+}
+
 // Task represents a single to-do item for a specific day.
 type Task struct {
 	ID            int64
@@ -61,7 +92,7 @@ type Task struct {
 	Description   string
 	Priority      Priority
 	TimeEstimate  string
-	IsCompleted   bool
+	Status        Status
 	CarriedFromID *int64
 }
 
@@ -77,10 +108,7 @@ func (t Task) DisplayDescription() string {
 }
 
 func (t Task) DoneDisplay() string {
-	if t.IsCompleted {
-		return "Yes"
-	}
-	return ""
+	return t.Status.PrintLabel()
 }
 
 func filterTasks(tasks []Task, predicate func(Task) bool) []Task {

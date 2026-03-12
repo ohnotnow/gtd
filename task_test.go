@@ -67,32 +67,70 @@ func TestDisplayDescription(t *testing.T) {
 }
 
 func TestDoneDisplay(t *testing.T) {
-	done := Task{IsCompleted: true}
+	done := Task{Status: StatusDone}
 	if got := done.DoneDisplay(); got != "Yes" {
 		t.Errorf("got %q, want %q", got, "Yes")
 	}
 
-	notDone := Task{IsCompleted: false}
+	notDone := Task{Status: StatusTodo}
 	if got := notDone.DoneDisplay(); got != "" {
 		t.Errorf("got %q, want %q", got, "")
+	}
+
+	wip := Task{Status: StatusInProgress}
+	if got := wip.DoneDisplay(); got != "WIP" {
+		t.Errorf("got %q, want %q", got, "WIP")
+	}
+}
+
+func TestStatusSymbol(t *testing.T) {
+	tests := []struct {
+		s    Status
+		want string
+	}{
+		{StatusTodo, ""},
+		{StatusInProgress, "▶"},
+		{StatusDone, "✓"},
+	}
+	for _, tt := range tests {
+		if got := tt.s.Symbol(); got != tt.want {
+			t.Errorf("Status(%d).Symbol() = %q, want %q", tt.s, got, tt.want)
+		}
+	}
+}
+
+func TestStatusPrintLabel(t *testing.T) {
+	tests := []struct {
+		s    Status
+		want string
+	}{
+		{StatusTodo, ""},
+		{StatusInProgress, "WIP"},
+		{StatusDone, "Yes"},
+	}
+	for _, tt := range tests {
+		if got := tt.s.PrintLabel(); got != tt.want {
+			t.Errorf("Status(%d).PrintLabel() = %q, want %q", tt.s, got, tt.want)
+		}
 	}
 }
 
 func TestFilterTasks(t *testing.T) {
 	tasks := []Task{
-		{Description: "a", IsCompleted: true},
-		{Description: "b", IsCompleted: false},
-		{Description: "c", IsCompleted: true},
+		{Description: "a", Status: StatusDone},
+		{Description: "b", Status: StatusTodo},
+		{Description: "c", Status: StatusDone},
+		{Description: "d", Status: StatusInProgress},
 	}
 
-	completed := filterTasks(tasks, func(t Task) bool { return t.IsCompleted })
+	completed := filterTasks(tasks, func(t Task) bool { return t.Status == StatusDone })
 	if len(completed) != 2 {
 		t.Errorf("expected 2 completed, got %d", len(completed))
 	}
 
-	incomplete := filterTasks(tasks, func(t Task) bool { return !t.IsCompleted })
-	if len(incomplete) != 1 {
-		t.Errorf("expected 1 incomplete, got %d", len(incomplete))
+	incomplete := filterTasks(tasks, func(t Task) bool { return t.Status != StatusDone })
+	if len(incomplete) != 2 {
+		t.Errorf("expected 2 incomplete, got %d", len(incomplete))
 	}
 }
 

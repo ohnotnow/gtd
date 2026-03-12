@@ -80,10 +80,11 @@ When no `--context` is given, tasks go into a default list. Each context has its
 | Key | Action |
 |-----|--------|
 | `a` | Add a new task |
+| `s` | Toggle in-progress on selected task |
 | `d` | Toggle done/not done on selected task |
 | `e` / `Enter` | Edit selected task |
 | `x` | Delete selected task (with confirmation) |
-| `c` | Carry incomplete tasks to tomorrow |
+| `c` | Carry incomplete/in-progress tasks to tomorrow |
 | `i` | Import incomplete tasks from most recent day (if the current day is empty) |
 | `v` | View a different day |
 | `q` | Quit |
