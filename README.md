@@ -87,8 +87,10 @@ When no `--context` is given, tasks go into a default list. Each context has its
 | `c` | Carry incomplete/in-progress tasks to tomorrow |
 | `i` | Import incomplete tasks from most recent day (if the current day is empty) |
 | `v` | View a different day |
+| `/` | Search/filter tasks by name |
+| `1`-`9` | Jump to task by number |
 | `q` | Quit |
-| `Esc` | Cancel current form |
+| `Esc` | Cancel current form / clear search filter |
 | `Up` / `Down` | Navigate tasks |
 
 ### Priority levels

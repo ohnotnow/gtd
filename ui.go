@@ -30,6 +30,7 @@ const (
 	modeConfirmDelete
 	modeConfirmCarry
 	modeViewDate
+	modeFilter
 )
 
 type model struct {
@@ -50,6 +51,10 @@ type model struct {
 	formEstimate string
 	formDate     string
 	formConfirm  bool
+
+	// Filter
+	filterText    string
+	filteredTasks []Task
 
 	// Context for current action
 	editTaskID          int64
@@ -88,6 +93,8 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch m.mode {
 	case modeTable:
 		return m.updateTable(msg)
+	case modeFilter:
+		return m.updateFilter(msg)
 	default:
 		return m.updateForm(msg)
 	}
@@ -105,7 +112,7 @@ func (m *model) View() string {
 	s.WriteString("\n\n")
 
 	switch m.mode {
-	case modeTable:
+	case modeTable, modeFilter:
 		if len(m.tasks) == 0 {
 			s.WriteString(infoStyle.Render("  No tasks for this day."))
 			s.WriteString("\n")
@@ -124,23 +131,31 @@ func (m *model) View() string {
 			if inProgress > 0 {
 				summary += fmt.Sprintf(", %d in progress", inProgress)
 			}
+			if m.filteredTasks != nil {
+				summary += fmt.Sprintf(" (showing %d)", len(m.filteredTasks))
+			}
 			s.WriteString(infoStyle.Render(summary))
 		}
 
-		if m.status != "" {
+		if m.mode == modeFilter {
+			s.WriteString("\n\n")
+			s.WriteString(statusStyle.Render(fmt.Sprintf("  / %s▌", m.filterText)))
+		} else if m.status != "" {
 			s.WriteString("\n\n")
 			s.WriteString(statusStyle.Render("  " + m.status))
 		}
 
 		s.WriteString("\n\n")
-		if len(m.tasks) == 0 {
+		if m.mode == modeFilter {
+			s.WriteString(helpStyle.Render("  type to filter · enter accept · esc clear"))
+		} else if len(m.tasks) == 0 {
 			help := "  a add · v view day · q quit"
 			if m.latestDateWithTasks != "" {
 				help = "  a add · i import · v view day · q quit"
 			}
 			s.WriteString(helpStyle.Render(help))
 		} else {
-			s.WriteString(helpStyle.Render("  a add · s start · d done · e/↵ edit · x delete · c carry · v view day · q quit"))
+			s.WriteString(helpStyle.Render("  a add · s start · d done · e/↵ edit · x delete · c carry · / search · 1-9 jump · v view · q quit"))
 		}
 		s.WriteString("\n")
 
@@ -158,6 +173,63 @@ func (m *model) View() string {
 	}
 
 	return s.String()
+}
+
+// --- Filter mode ---
+
+func (m *model) visibleTasks() []Task {
+	if m.filteredTasks != nil {
+		return m.filteredTasks
+	}
+	return m.tasks
+}
+
+func (m *model) applyFilter() {
+	if m.filterText == "" {
+		m.filteredTasks = nil
+	} else {
+		needle := strings.ToLower(m.filterText)
+		m.filteredTasks = filterTasks(m.tasks, func(t Task) bool {
+			return strings.Contains(strings.ToLower(t.Description), needle)
+		})
+	}
+	m.rebuildTable()
+}
+
+func (m *model) clearFilter() {
+	m.filterText = ""
+	m.filteredTasks = nil
+	m.rebuildTable()
+}
+
+func (m *model) updateFilter(msg tea.Msg) (tea.Model, tea.Cmd) {
+	keyMsg, ok := msg.(tea.KeyMsg)
+	if !ok {
+		return m, nil
+	}
+
+	switch keyMsg.String() {
+	case "esc":
+		m.clearFilter()
+		m.mode = modeTable
+		return m, nil
+	case "enter":
+		m.mode = modeTable
+		return m, nil
+	case "backspace":
+		if len(m.filterText) > 0 {
+			m.filterText = m.filterText[:len(m.filterText)-1]
+			m.applyFilter()
+		}
+		return m, nil
+	default:
+		r := keyMsg.Runes
+		if len(r) == 1 && r[0] >= 32 {
+			m.filterText += string(r)
+			m.applyFilter()
+		}
+		return m, nil
+	}
 }
 
 // --- Table mode ---
@@ -184,6 +256,26 @@ func (m *model) updateTable(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.enterCarryMode()
 		case "v":
 			return m.enterViewDateMode()
+		case "/":
+			m.filterText = ""
+			m.filteredTasks = nil
+			m.mode = modeFilter
+			m.rebuildTable()
+			return m, nil
+		case "1", "2", "3", "4", "5", "6", "7", "8", "9":
+			num := int(keyMsg.Runes[0] - '0') // 1-based task number
+			// Find the original task by its 1-based index in m.tasks
+			if num <= len(m.tasks) {
+				target := m.tasks[num-1]
+				// Find its position in the visible (possibly filtered) list
+				for vi, vt := range m.visibleTasks() {
+					if vt.ID == target.ID {
+						m.table.SetCursor(vi)
+						break
+					}
+				}
+			}
+			return m, nil
 		}
 	}
 
@@ -198,7 +290,7 @@ func (m *model) toggleDone() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	task := m.tasks[m.table.Cursor()]
+	task := m.visibleTasks()[m.table.Cursor()]
 	if task.Status == StatusDone {
 		m.store.MarkIncomplete(task.ID)
 		m.status = "Task marked as not done."
@@ -217,7 +309,7 @@ func (m *model) toggleInProgress() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	task := m.tasks[m.table.Cursor()]
+	task := m.visibleTasks()[m.table.Cursor()]
 	if task.Status == StatusInProgress {
 		m.store.MarkIncomplete(task.ID)
 		m.status = "Task no longer in progress."
@@ -253,7 +345,7 @@ func (m *model) enterEditMode() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	task := m.tasks[m.table.Cursor()]
+	task := m.visibleTasks()[m.table.Cursor()]
 	m.editTaskID = task.ID
 	m.formDesc = task.Description
 	m.formPriority = task.Priority
@@ -275,7 +367,7 @@ func (m *model) enterDeleteMode() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
-	task := m.tasks[m.table.Cursor()]
+	task := m.visibleTasks()[m.table.Cursor()]
 	m.editTaskID = task.ID
 	m.formConfirm = true
 	m.form = confirmForm(fmt.Sprintf("Delete '%s'?", task.Description), &m.formConfirm)
@@ -421,17 +513,26 @@ func (m *model) refreshTasks() {
 		}
 	}
 
-	m.rebuildTable()
+	m.applyFilter()
 }
 
 func (m *model) rebuildTable() {
 	cursor := m.table.Cursor()
 
+	visible := m.visibleTasks()
 	cols := tableColumns(m.width)
-	rows := make([]table.Row, len(m.tasks))
-	for i, t := range m.tasks {
+	rows := make([]table.Row, len(visible))
+	for i, t := range visible {
+		// Show the original 1-based index so number-jump stays consistent
+		origIdx := i + 1
+		for j, orig := range m.tasks {
+			if orig.ID == t.ID {
+				origIdx = j + 1
+				break
+			}
+		}
 		rows[i] = table.Row{
-			fmt.Sprintf("%d", i+1),
+			fmt.Sprintf("%d", origIdx),
 			t.DisplayDescription(),
 			string(t.Priority),
 			t.TimeEstimate,
@@ -439,7 +540,7 @@ func (m *model) rebuildTable() {
 		}
 	}
 
-	height := len(m.tasks) + 2 // +2 for header row + border
+	height := len(visible) + 2 // +2 for header row + border
 	if height < 3 {
 		height = 3
 	}
@@ -467,8 +568,8 @@ func (m *model) rebuildTable() {
 	t.SetStyles(s)
 
 	// Preserve cursor position
-	if cursor >= len(m.tasks) {
-		cursor = len(m.tasks) - 1
+	if cursor >= len(visible) {
+		cursor = len(visible) - 1
 	}
 	if cursor < 0 {
 		cursor = 0
